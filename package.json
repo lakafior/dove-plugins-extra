@@ -1,0 +1,21 @@
+{
+  "name": "dove-plugins",
+  "private": true,
+  "type": "module",
+  "description": "Plugins for Dove (iOS): metadata and downloads from sites without an official API.",
+  "license": "MPL-2.0",
+  "dove": {
+    "repository": "Marcin's Dove plugins",
+    "url": "https://lakafior.github.io/dove-plugins/index.json"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "cheerio": "1.2.0",
+    "string-similarity": "4.0.4"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

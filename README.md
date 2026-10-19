@@ -1,0 +1,40 @@
+# dove-plugins
+
+Plugins for [Dove](https://github.com/lakafior/Dove) (iOS): book metadata and downloads from sites without an
+official API, run on the phone in Dove's JavaScript sandbox. The contract is Dove's `docs/plugins.md` (API v1).
+
+| Plugin | Id | Does | Reaches |
+|---|---|---|---|
+| Polskie książki | `pl.polskie-ksiazki` | metadata for Books and Audiobooks: lubimyczytac.pl, Audioteka (audiobooks), Storytel (the market's own editions) | lubimyczytac.pl, audioteka.com, www.storytel.com |
+| Audible | `audible.metadata` | audiobook metadata from Audible's catalog API (store in settings) | api.audible.* |
+| Anna's Archive | `annas-archive.download` | downloads with your member key; search on the site in Dove's browser, file pages are recognised | the address you set |
+
+## Use in Dove
+
+Settings › Search and metadata › Plugins › Add repository:
+
+```
+https://lakafior.github.io/dove-plugins/index.json
+```
+
+Then install a plugin (Dove shows the hosts it may reach) and fill its settings.
+
+## Build
+
+```sh
+npm ci
+npm run build      # dist/plugins/*.js and dist/index.json with each script's SHA-256
+```
+
+Pushing to `main` publishes `dist/` to GitHub Pages (`.github/workflows/pages.yml`; Settings › Pages › Source:
+GitHub Actions). Dove installs only scripts whose SHA-256 matches the index, so a changed plugin needs a new
+version in its manifest.
+
+## Writing a plugin
+
+- `plugins/<name>/index.js` sets `globalThis.plugin = { manifest, metadata?, search?, resolve? }` (see Dove's
+  `docs/plugins.md`); shared code lives in `plugins/_shared/`.
+- Network only through `await dove.fetch(url, { headers })` to the manifest's `hosts`.
+- JavaScriptCore has no DOM, `URL`, `TextDecoder`, timers or `atob`: `plugins/_shared/polyfills.js` is injected
+  into every bundle (`atob`, which cheerio needs); parse HTML with `cheerio/slim`.
+- Bundles must stay under 2 MB; calls have 30 seconds.
