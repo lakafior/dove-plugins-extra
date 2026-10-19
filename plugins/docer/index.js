@@ -1,14 +1,16 @@
 // Docer (docer.pl): user-uploaded documents, no account. Search stays on the site's own pages (Dove's
 // browser opens them: Docer's anti-bot turns away scripted requests that do not look like the site's own
 // page talking to it, a browsing user does not trip it); Dove recognises a document's page and asks this
-// plugin for the file. The download does not use the download button's endpoint — /start/download wants
-// an account or payment for popular files — but the file viewer's /start/show, which the page posts to
-// with the file's id, extension and size (plus a random number as its captcha answer when none was
-// asked) and which answers with a direct file URL on stream.docer.pl (a Google Docs viewer URL, the file
-// itself in its `url=`, for the formats Docer shows there). Everything the POST needs is on the
-// document's page: #iframe2's data attributes for the id, extension and exact size, and schema.org's
-// Book for the file's own name. The POST must look like the viewer's own request — headers and all —
-// because the anti-bot returns its captcha page to anything it can tell apart from the page's XHR.
+// plugin for the file. The file address the page's own viewer fetched is read out of the page (`harvest`:
+// `data-pdf-url` once the viewer has it) — the page's requests passed Docer's checks, captchas included —
+// and this plugin hands it back for downloading. Without it, the download tries the file viewer's
+// /start/show itself: the page posts to it with the file's id, extension and size (plus a random number as
+// its captcha answer when none was asked) and it answers with a direct file URL on stream.docer.pl (a
+// Google Docs viewer URL, the file itself in its `url=`, for the formats Docer shows there). Everything
+// the POST needs is on the document's page: #iframe2's data attributes for the id, extension and exact
+// size, and schema.org's Book for the file's own name. The POST must look like the viewer's own request —
+// headers and all — because the anti-bot returns its captcha page to anything it can tell apart from the
+// page's XHR.
 import { load } from "cheerio/slim"
 import { browserHeaders } from "../_shared/text.js"
 
@@ -104,13 +106,17 @@ globalThis.plugin = {
   manifest: {
     id: "docer.books",
     name: "Docer",
-    version: "1.0.0",
+    version: "1.0.1",
     api: 1,
     summary: "Documents from docer.pl: search on the site in Dove's browser, download in the app, no account",
     capabilities: ["resolve"],
     categories: ["books"],
     hosts: [host, `*.${host}`],
     browse: `https://${host}/show/?q={query}`,
+    // The viewer's own file address, read out of the page once its viewer has fetched it: Docer's checks
+    // (captchas included) are passed by the page, not by a scripted request.
+    harvest:
+      "(function(){var e=document.getElementById('iframe2');var u=e&&e.getAttribute('data-pdf-url')||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}var m=u.match(/[?&]url=([^&]+)/);return m?decodeURIComponent(m[1]):u})()",
     links: [
       `^https?://${host.replace(/\./g, "\\.")}/doc/(?<id>[a-z0-9]+)/?`,
       // A file URL itself (from the viewer, pasted, shared): already the direct link, handed back.
@@ -124,7 +130,17 @@ globalThis.plugin = {
 
     // A stream URL: already the direct link, only the download needs it back.
     if (raw.includes("/")) {
-      return { url: `https://stream.${host}/getpdf/${raw}`, headers: browserHeaders }
+      let name
+      const slug = raw.split("/")[1]
+      if (slug) {
+        try {
+          const page = await docPage(slug)
+          name = fileName(page.title, page.ext)
+        } catch {
+          // without the name, Dove uses the address's last part
+        }
+      }
+      return { url: `https://stream.${host}/getpdf/${raw}`, ...(name ? { fileName: name } : {}), headers: browserHeaders }
     }
     if (/^[A-Za-z0-9_=,+-]{20,}$/.test(raw)) {
       // pdf_dummy's token names the file inside (base64, padding as commas): "Frank Herbert - …".
