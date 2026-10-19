@@ -106,7 +106,7 @@ globalThis.plugin = {
   manifest: {
     id: "docer.books",
     name: "Docer",
-    version: "1.0.2",
+    version: "1.0.3",
     api: 1,
     summary: "Documents from docer.pl: search on the site in Dove's browser, download in the app, no account",
     capabilities: ["resolve"],
@@ -116,25 +116,41 @@ globalThis.plugin = {
     // The viewer's own file address, read out of the page once its viewer has fetched it: Docer's checks
     // (captchas included) are passed by the page, not by a scripted request. A PDF lands in data-pdf-url; an
     // EPUB's ePub.js keeps its address only in JavaScript, but its download shows in the page's Resource
-    // Timing, a Google Docs viewer keeps the file inside its own url=.
+    // Timing, a Google Docs viewer keeps the file inside its own url=. That address carries an expiring
+    // token, so the expression also follows its redirect once - a request without the page's cookies is
+    // the one Docer redirects - and hands back the lasting address it lands on.
     harvest:
-      "(function(){var e=document.getElementById('iframe2');var u=e&&e.getAttribute('data-pdf-url')||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}if(!u){var r=window.performance&&performance.getEntriesByType?performance.getEntriesByType('resource'):[];for(var i=r.length-1;i>=0;i--){if(/https?:\\/\\/stream2?\\.docer\\.pl\\//.test(r[i].name)){u=r[i].name;break}}}var m=u.match(/[?&]url=([^&]+)/);return m?decodeURIComponent(m[1]):u||''})()",
+      "(async function(){var w=window;var e=document.getElementById('iframe2');var u=(e&&e.getAttribute('data-pdf-url'))||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}if(!u){var r=w.performance&&performance.getEntriesByType?performance.getEntriesByType('resource'):[];for(var i=r.length-1;i>=0;i--){if(/https?:\\/\\/stream2?\\.docer\\.pl\\//.test(r[i].name)){u=r[i].name;break}}}var m=u.match(/[?&]url=([^&]+)/);if(m)u=decodeURIComponent(m[1]);if(!u||!/https?:\\/\\/stream2?\\.docer\\.pl\\//.test(u))return '';var c=w.__doveFile;if(!c||c.from!==u){c=w.__doveFile={from:u,url:''};try{var a=await fetch(u,{method:'HEAD',mode:'no-cors',credentials:'omit'});if(a&&/https?:\\/\\/stream2?\\.docer\\.pl\\//.test(a.url||''))c.url=a.url}catch(_){}}return c.url||u})()",
     links: [
       `^https?://${host.replace(/\./g, "\\.")}/doc/(?<id>[a-z0-9]+)/?`,
-      // A file URL itself (from the viewer, pasted, shared): already the direct link, handed back.
-      `^https?://stream\\.${host.replace(/\./g, "\\.")}/[^/?#]+/(?<id>[^/?#]+/[^/?#]+/?)`,
-      `^https?://stream2\\.${host.replace(/\./g, "\\.")}/pdf_dummy/(?<id>[A-Za-z0-9_=,+-]+)`,
+      // A file address itself (the viewer's own, or the lasting one it redirects to; from the page,
+      // pasted, shared): already the direct link, handed back.
+      `^https?://stream\\.${host.replace(/\./g, "\\.")}/(?<id>[^?#]+)`,
+      `^https?://stream2\\.${host.replace(/\./g, "\\.")}/(?<id>[^?#]+)`,
     ],
   },
 
   async resolve({ id }, ctx) {
     const raw = String(id || "").trim()
 
-    // A stream URL: already the direct link, only the download needs it back.
+    // A file address Docer already shows, handed back for downloading: the viewer's own
+    // ("getpdf/<n>/<slug>/<token>", an expiring token) or the lasting one its redirect lands on
+    // ("pdf_dummy/<token>", the token names the file inside).
     if (raw.includes("/")) {
-      // "getpdf/118574/8vxc5/MjE…": the slug is the short mixed-alphanumeric part.
+      const parts = raw.split("/")
+      if (parts.length === 2 && /^[A-Za-z0-9_=,+-]{16,}$/.test(parts[1])) {
+        let name
+        try {
+          const info = JSON.parse(atob(parts[1].replace(/,/g, "=")))
+          if (info && info.name) name = fileName(info.name, info.extension)
+        } catch {
+          // without the name the address is handed back as it is
+        }
+        return { url: `https://stream2.${host}/${raw}`, ...(name ? { fileName: name } : {}), headers: browserHeaders }
+      }
+      // The slug is the short mixed-alphanumeric part.
       let name
-      const slug = raw.split("/").find(
+      const slug = parts.find(
         (part, index) => index > 0 && /^[a-z0-9]{3,9}$/i.test(part) && /[a-z]/i.test(part) && /\d/.test(part),
       )
       if (slug) {
