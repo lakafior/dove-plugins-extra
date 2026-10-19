@@ -11,6 +11,7 @@ official API, run on the phone in Dove's JavaScript sandbox. The contract is Dov
 | Anna's Archive | `annas-archive.download` | downloads with your member key; search on the site in Dove's browser, file pages are recognised | the address you set |
 | Wolnelektury | `wolnelektury.books` | for a book picked from Dove's metadata search: Wolne Lektury's free Polish books (epub; PDF, mobi, fb2, txt as fallback) and audiobooks (mp3, a recorded work's parts under one row, in reading order), no account. The site's OPDS catalog searches books, its official API gives the files and the recordings | wolnelektury.pl |
 | Docer | `docer.books` | documents from docer.pl: download in the app, no account; search on the site in Dove's browser, document pages are recognised | docer.pl, stream.docer.pl, stream2.docer.pl, img2.docer.pl |
+| Doci | `doci.books` | documents from doci.pl (Docer's twin with its own file store): download in the app, no account; search on the site in Dove's browser, document pages are recognised | doci.pl, stream.doci.pl, stream2.doci.pl |
 
 ## Use in Dove
 
