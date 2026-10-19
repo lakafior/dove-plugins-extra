@@ -9,7 +9,7 @@ official API, run on the phone in Dove's JavaScript sandbox. The contract is Dov
 | Audible | `audible.metadata` | audiobook metadata from Audible's catalog API (store in settings) | api.audible.* |
 | Libgen | `libgen.books` | search for Books in the app (rows with format, size, language, cover) and download; no account. Mirror in settings (default libgen.li; also libgen.la, .bz, .gl) | the mirror you set |
 | Anna's Archive | `annas-archive.download` | downloads with your member key; search on the site in Dove's browser, file pages are recognised | the address you set |
-| Wolnelektury | `wolnelektury.books` | search and download Wolne Lektury's free Polish books (epub; PDF, mobi, fb2, txt as fallback) and audiobooks (mp3, one file per part) in the app, no account. The site's OPDS catalog searches books, its official API gives the files and the recordings | wolnelektury.pl |
+| Wolnelektury | `wolnelektury.books` | for a book picked from Dove's metadata search: Wolne Lektury's free Polish books (epub; PDF, mobi, fb2, txt as fallback) and audiobooks (mp3, a recorded work's parts under one row, in reading order), no account. The site's OPDS catalog searches books, its official API gives the files and the recordings | wolnelektury.pl |
 
 ## Use in Dove
 
