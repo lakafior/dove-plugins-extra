@@ -7,6 +7,7 @@ official API, run on the phone in Dove's JavaScript sandbox. The contract is Dov
 |---|---|---|---|
 | Polskie książki | `pl.polskie-ksiazki` | metadata for Books and Audiobooks: lubimyczytac.pl, Audioteka (audiobooks), Storytel (the market's own editions) | lubimyczytac.pl, audioteka.com, www.storytel.com |
 | Audible | `audible.metadata` | audiobook metadata from Audible's catalog API (store in settings) | api.audible.* |
+| Monochrome | `monochrome.music` | Hi-Res FLAC releases from monochrome.st for Music, no account: search in the app (from an album's screen its releases come first) and download a whole release, one FLAC per track in one folder; the links need no headers, so a cloud service can fetch them too. Release pages (`monochrome.st/album/<id>`) are recognised | tracks.monochrome.st |
 | Deezer | `deezer.metadata` | album covers, titles, types and track lists for Music (Dove 2026-10-19 or newer), from Deezer's public API, no account. Deezer's API terms do not allow use alongside downloading: installing it is your call | api.deezer.com |
 | Libgen | `libgen.books` | search for Books in the app (rows with format, size, language, cover) and download; no account. Mirror in settings (default libgen.li; also libgen.la, .bz, .gl) | the mirror you set |
 | Anna's Archive | `annas-archive.download` | downloads with your member key; search on the site in Dove's browser, file pages are recognised | the address you set |
