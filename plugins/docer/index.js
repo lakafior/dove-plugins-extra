@@ -1,4 +1,6 @@
-// Docer (docer.pl): user-uploaded documents, no account. Search stays on the site's own pages (Dove's
+// Docer (docer.pl): user-uploaded documents, no account. Files up to 1 MB are free: /start/download (the
+// page's download button) answers a script with the file's address, no captcha. Larger ones go the way below.
+// Search stays on the site's own pages (Dove's
 // browser opens them: Docer's anti-bot turns away scripted requests that do not look like the site's own
 // page talking to it, a browsing user does not trip it); Dove recognises a document's page and asks this
 // plugin for the file. The file address the page's own viewer fetched is read out of the page (`harvest`):
@@ -47,6 +49,48 @@ async function show(body, referer) {
     )
   }
   return answer.response
+}
+
+/**
+ * The download button's own call: the file's address for a free file (up to 1 MB), nothing when Docer wants
+ * payment (payment_info: 1) or a captcha (success: false), or when it answers anything unusual.
+ */
+async function startDownload(slug) {
+  const rc = Math.floor(Math.random() * 9) + 1
+  const response = await dove.fetch(`https://${host}/start/download`, {
+    method: "POST",
+    headers: { ...xhrHeaders, Referer: `https://${host}/doc/${slug}` },
+    body: `item_id=${encodeURIComponent(slug)}&rc=${rc}`,
+  })
+  if (response.status !== 200) return undefined
+  let answer
+  try {
+    answer = response.json()
+  } catch {
+    return undefined
+  }
+  const data = answer && answer.success === true && answer.response
+  if (!data || Number(data.payment_info) === 1 || !data.url) return undefined
+  return String(data.url)
+}
+
+/**
+ * The file's name from a "*_dummy/<token>" address: the token is base64 JSON ("," for "=") with `name` and
+ * `extension`, the name in UTF-8 ("Wiersze - Kazimiera Iłłakowiczówna").
+ */
+function dummyName(address) {
+  const token = String(address || "").match(/_dummy\/([A-Za-z0-9_=,+\/-]{16,})/)
+  if (!token) return undefined
+  try {
+    const binary = atob(token[1].replace(/,/g, "=").replace(/-/g, "+").replace(/_/g, "/"))
+    const text = decodeURIComponent(
+      Array.from(binary, (char) => "%" + char.charCodeAt(0).toString(16).padStart(2, "0")).join(""),
+    )
+    const info = JSON.parse(text)
+    return info && info.name ? fileName(info.name, info.extension) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** A document's page: the file's id, extension, exact size (in #iframe2's data) and its own name. */
@@ -102,9 +146,9 @@ globalThis.plugin = {
   manifest: {
     id: "docer.books",
     name: "Docer",
-    version: "1.0.4",
+    version: "1.1.0",
     api: 1,
-    summary: "Documents from docer.pl: search on the site in Dove's browser, download in the app, no account",
+    summary: "Documents from docer.pl: search on the site in Dove's browser, download in the app, no account (files over 1 MB through the page's viewer)",
     capabilities: ["resolve"],
     categories: ["books"],
     hosts: [host, `*.${host}`],
@@ -114,7 +158,7 @@ globalThis.plugin = {
     // file inside its url=). A file fetch it is — the guard needs the two path parts a file address has,
     // so the address an expired token redirects to (the document's page) never passes for a file.
     harvest:
-      "(function(){var e=document.getElementById('iframe2');var u=(e&&e.getAttribute('data-pdf-url'))||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}if(!u){var r=window.performance&&performance.getEntriesByType?performance.getEntriesByType('resource'):[];for(var i=r.length-1;i>=0;i--){if(/https?:\\/\\/stream2?\\.docer\\.pl\\/[^\\/]+\\/[^\\/]+\\//.test(r[i].name)){u=r[i].name;break}}}var m=u.match(/[?&]url=([^&]+)/);return m?decodeURIComponent(m[1]):u||''})()",
+      "(function(){var e=document.getElementById('iframe2');var u=(e&&e.getAttribute('data-pdf-url'))||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}if(!u){var r=window.performance&&performance.getEntriesByType?performance.getEntriesByType('resource'):[];for(var i=r.length-1;i>=0;i--){if(/https?:\\/\\/stream2?\\.docer\\.pl\\/[^\\/]+\\/[^\\/]+\\//.test(r[i].name)&&!/\\.(jpe?g|png|gif|webp|svg)(\\?|$)/i.test(r[i].name)){u=r[i].name;break}}}var m=u.match(/[?&]url=([^&]+)/);return m?decodeURIComponent(m[1]):u||''})()",
     links: [
       `^https?://${host.replace(/\./g, "\\.")}/doc/(?<id>[a-z0-9]+)/?`,
       // A file address itself (the viewer's own, from the page, pasted, shared): handed back as it is.
@@ -132,13 +176,7 @@ globalThis.plugin = {
     if (raw.includes("/")) {
       const parts = raw.split("/")
       if (parts.length === 2 && /^[A-Za-z0-9_=,+-]{16,}$/.test(parts[1])) {
-        let name
-        try {
-          const info = JSON.parse(atob(parts[1].replace(/,/g, "=")))
-          if (info && info.name) name = fileName(info.name, info.extension)
-        } catch {
-          // without the name the address is handed back as it is
-        }
+        const name = dummyName(raw)
         return { url: `https://stream2.${host}/${raw}`, ...(name ? { fileName: name } : {}), headers: browserHeaders }
       }
       let name
@@ -160,11 +198,28 @@ globalThis.plugin = {
       return { url: `https://stream2.${host}/pdf_dummy/${raw}`, headers: browserHeaders }
     }
 
-    // A document's page: this is where a scripted request runs into Docer's captcha, so this path is the
-    // one a harvested address spares the user from; it stays for a page that has not loaded its viewer.
     const slug = raw
     if (!/^[a-z0-9]+$/i.test(slug)) throw new Error("Not a Docer document id")
 
+    // Files up to 1 MB are free: the page's download button posts the slug to /start/download, which
+    // answers with the file's address (stream.docer.pl/getpdf/…, every format, redirecting to the file under
+    // its own name), no captcha. Larger files answer payment_info: 1; then the viewer's path below.
+    const free = await startDownload(slug)
+    if (free) {
+      // The name: one byte of the file is enough to see where the address redirects (its token carries the
+      // name), and spares the document's page, which Docer soon answers with 410. The address stays usable.
+      let name
+      try {
+        const probe = await dove.fetch(free, { headers: { ...browserHeaders, Range: "bytes=0-0" } })
+        name = dummyName(probe.url)
+      } catch {
+        // without the name, Dove uses the address's last part
+      }
+      return { url: free, ...(name ? { fileName: name } : {}), headers: browserHeaders }
+    }
+
+    // A document's page: this is where a scripted request runs into Docer's captcha, so this path is the
+    // one a harvested address spares the user from; it stays for a page that has not loaded its viewer.
     const page = await docPage(slug)
     const ext = page.ext || "pdf"
     const rc = Math.floor(Math.random() * 9) + 1

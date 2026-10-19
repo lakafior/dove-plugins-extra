@@ -5,7 +5,7 @@
 // account pays for downloads from its transfer, so logging in (Settings) is part of the deal: the balance
 // rides along with a download link, and when the transfer cannot cover a file, the error says how much of it
 // is left (files their owners marked free cost no transfer at all).
-import { score } from "../_shared/text.js"
+import { mapLimited, score } from "../_shared/text.js"
 
 const host = "mobile.chomikuj.pl"
 const salt = "wzrwYua$.DSe8suk!`'2"
@@ -88,6 +88,11 @@ async function api(path, { query = "", body, apiKey } = {}) {
     headers,
     ...(body === undefined ? {} : { body: bodyText }),
   })
+  // Cloudflare in front of the API sometimes answers a challenge page instead (seen by the other clients).
+  const answered = response.headers || {}
+  if (String(answered["cf-mitigated"] || "").toLowerCase() === "challenge" || /<title>just a moment|challenges\.cloudflare\.com/i.test(response.body || "")) {
+    throw new Error("chomikuj.pl is checking this network (Cloudflare); try again in a few minutes")
+  }
   let answer
   try {
     answer = response.json()
@@ -208,6 +213,12 @@ async function fileLink(session, fileId) {
   return api("/api/v3/files/download", { query: `FileId=${fileId}`, apiKey: session.ApiKey })
 }
 
+/** The API's codes for a link it does not give: 604 the file is gone, 605 the transfer does not cover it. */
+function refused(answer) {
+  if (answer.Code === 604) return new Error("Chomikuj no longer has this file (deleted or hidden by its owner)")
+  return new Error("Chomikuj refused: " + (answer.Message || `code ${answer.Code}`))
+}
+
 function notEnoughTransfer(balance, bytes) {
   return new Error(
     `Not enough transfer for this file (${sizeText(bytes)}): ${balance.BalanceInfo || "your transfer ran out"}.` +
@@ -217,8 +228,9 @@ function notEnoughTransfer(balance, bytes) {
 
 /**
  * Every file of a folder, in its order (the site's `Path` keeps subfolders such as CD1/CD2 together). Links are
- * asked one by one; when the transfer runs out partway, the files already paid for are still handed over rather
- * than thrown away, and the log says how many were left.
+ * asked four at a time: one by one, a many-part audiobook (100+ files) ran past the 30 seconds a call has. When
+ * the transfer runs out partway, the files already paid for are still handed over rather than thrown away, and
+ * the log says how many were left.
  */
 async function resolveFolder(ownerId, folderId, name, ctx) {
   const session = await login(ctx)
@@ -230,18 +242,28 @@ async function resolveFolder(ownerId, folderId, name, ctx) {
     String(a.Path || "").localeCompare(String(b.Path || ""), undefined, { numeric: true }) ||
     String(a.FileName || "").localeCompare(String(b.FileName || ""), undefined, { numeric: true }),
   )
-  const links = []
-  for (const file of files) {
-    const answer = await fileLink(session, file.FileId)
-    if (!answer.FileUrl) {
-      const balance = answer.AccountBalance || {}
-      if (answer.Code === 605) {
-        if (!links.length) throw notEnoughTransfer(balance, (Number(listing.QuotaRequired) || Number(file.Size) || 0) * 1024)
-        dove.log(`transfer ran out after ${links.length} of ${files.length} files: ${balance.BalanceInfo || "?"}`)
-        break
-      }
-      throw new Error("Chomikuj refused: " + (answer.Message || `code ${answer.Code}`))
+  // Once the transfer is out, no further link is asked for (each ask is a charge attempt).
+  let outOfTransfer = null
+  let firstError = null
+  let thrown = null
+  const answers = await mapLimited(files, 4, async (file) => {
+    if (outOfTransfer) return null
+    let answer
+    try {
+      answer = await fileLink(session, file.FileId)
+    } catch (error) {
+      thrown = thrown || error
+      return null
     }
+    if (answer.FileUrl) return answer
+    if (answer.Code === 605) outOfTransfer = outOfTransfer || answer
+    else firstError = firstError || answer
+    return null
+  })
+  const links = []
+  files.forEach((file, index) => {
+    const answer = answers[index]
+    if (!answer) return
     const format = String(file.FileType || "").toLowerCase()
     links.push({
       url: answer.FileUrl,
@@ -249,6 +271,17 @@ async function resolveFolder(ownerId, folderId, name, ctx) {
       fileName: fileName(String(file.FileName || "file").replace(new RegExp(`\\.${format}$`, "i"), ""), format),
       ...(Number(file.Size) ? { size: Number(file.Size) * 1024 } : {}),
     })
+  })
+  if (!links.length) {
+    if (outOfTransfer) {
+      throw notEnoughTransfer(outOfTransfer.AccountBalance || {}, (Number(listing.QuotaRequired) || 0) * 1024)
+    }
+    if (firstError) throw refused(firstError)
+    throw thrown || new Error(`Chomikuj gave no links for “${name}”.`)
+  }
+  if (links.length < files.length) {
+    const balance = (outOfTransfer && outOfTransfer.AccountBalance) || {}
+    dove.log(`got ${links.length} of ${files.length} files${outOfTransfer ? `; transfer ran out: ${balance.BalanceInfo || "?"}` : ""}`)
   }
   return links
 }
@@ -270,7 +303,7 @@ globalThis.plugin = {
   manifest: {
     id: "chomikuj.files",
     name: "Chomikuj",
-    version: "1.1.0",
+    version: "1.2.0",
     api: 1,
     summary:
       "chomikuj.pl with your account: search every category in the app and download from the account's transfer; albums and many-part audiobooks come as one folder",
@@ -375,7 +408,7 @@ globalThis.plugin = {
     const balance = answer.AccountBalance || {}
     if (!answer.FileUrl) {
       if (answer.Code === 605) throw notEnoughTransfer(balance, kilobytes * 1024)
-      throw new Error("Chomikuj refused: " + (answer.Message || `code ${answer.Code}`))
+      throw refused(answer)
     }
     dove.log(`transfer left: ${balance.BalanceInfo || "?"}`)
     return {

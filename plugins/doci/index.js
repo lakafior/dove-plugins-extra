@@ -1,13 +1,19 @@
 // Doci (doci.pl): user-uploaded documents, a Docer twin with its own file store. Search stays on the
-// site's own pages (Dove's browser opens them: the checks — a reCAPTCHA before a file shows — are passed
-// by a browsing user, not by a scripted request); Dove recognises a document's page and asks this plugin
-// for the file. The file address the page's own viewer fetched is read out of the page (`harvest`: the
-// viewer puts it in data-pdf-url, every format) and handed back for downloading as it is. Without one,
-// the plugin asks the viewer's endpoints itself — the page posts the file's id, size and extension to
-// file/file_data/cl, which answers whether a captcha is asked, and then to file/file_data/show, which
-// answers with the file's address (a Google Docs viewer URL, the file inside its `url=`) — but without
-// the captcha's answer the address the site hands out is a stub that answers 410, so a page whose viewer
-// loaded is the only dependable way in.
+// site's own pages (Dove's browser opens them); Dove recognises a document's page and asks this plugin
+// for the file.
+//
+// Files up to 1 MB are free: the page's "Pobierz plik" button posts the file's number to
+// download/payment_info, which answers with a download address (doci.pl/download/<number>/<time>,
+// redirecting to the file on download2.doci.pl with its own name) — no captcha, no account. Larger files
+// cost transfer (the same call answers with a payment form instead), and that is not something a plugin
+// gets around. What is left for them is the page's viewer: after its reCAPTCHA, file/file_data/show
+// answers a PDF with the address its pdf.js renders (data-pdf-url, stream.doci.pl/getpdf/…): the whole
+// original file, read out of the page by `harvest` and fetched with a doci.pl Referer. Any other format
+// gets no file from the viewer (show fails even after the captcha), so nothing is harvested and the error
+// says why. (Version 1.0.0 also took the last stream.doci.pl request the page made, which could be a
+// preview image: the "random JPG".)
+//
+// Without the captcha's answer, show hands out a stub address that answers 410 (or redirects to the page).
 import { load } from "cheerio/slim"
 import { browserHeaders } from "../_shared/text.js"
 
@@ -37,9 +43,13 @@ async function post(path, payload, referer) {
   return answer
 }
 
-/** A document's page: the file's id, extension and size (in #iframe2's data) and its own name (the h1). */
+/**
+ * A document's page: the viewer's file id, extension and size (in #iframe2's data), the download button's
+ * file number and the file's own name (the h1).
+ */
 async function itemPage(id) {
   const response = await dove.fetch(`https://${host}/${id}`, { headers: browserHeaders })
+  if (response.status === 404 || response.status === 410) throw new Error("Doci no longer has this document")
   if (response.status !== 200) throw new Error(`doci.pl answered ${response.status}`)
   const $ = load(response.body)
   const iframe = $("#iframe2")
@@ -51,11 +61,23 @@ async function itemPage(id) {
     .trim()
   return {
     id: iframe.attr("data-id"),
+    number: String($("#file-download").attr("data-file-id") || "").trim() || undefined,
     ext: String(iframe.attr("data-ext") || "").toLowerCase() || undefined,
     size: Number(iframe.attr("data-size")) || undefined,
     title,
   }
 }
+
+/** Free files (up to 1 MB): the address the "Pobierz plik" button opens, or nothing when Doci wants payment. */
+async function freeDownload(number, referer) {
+  const answer = await post("/download/payment_info", { item_id: Number(number), file_id: Number(number) }, referer)
+  const data = answer && answer.success === true && answer.response && answer.response.download_data
+  if (!data || !data.download_url || !data.time) return undefined
+  return `${data.download_url}${answer.response.item_id || number}/${data.time}`
+}
+
+/** Doci's limit for downloads without payment. */
+const freeLimit = 1024 * 1024
 
 function fileName(title, ext) {
   const clean = (text) => String(text || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim()
@@ -70,24 +92,26 @@ globalThis.plugin = {
   manifest: {
     id: "doci.books",
     name: "Doci",
-    version: "1.0.0",
+    version: "1.1.0",
     api: 1,
-    summary: "Documents from doci.pl: search on the site in Dove's browser, download in the app, no account",
+    summary: "Documents from doci.pl: search on the site in Dove's browser, download in the app, no account (files over 1 MB: PDFs only, after the page's captcha)",
     capabilities: ["resolve"],
     categories: ["books"],
     hosts: [host, `*.${host}`],
     browse: `https://${host}/search/all/{query}`,
-    // The viewer's own file address, read out of the page once its viewer has fetched it: the viewer puts
-    // it in data-pdf-url, every format (an EPUB's or MOBI's download would also show among the page's
-    // requests, so Resource Timing is asked as a fallback; a Google Docs viewer keeps the file in its
-    // url=). A file fetch it is — the guard needs the path parts a file address has.
+    // A PDF's own address, read out of the page once its viewer has it: data-pdf-url, set only when show
+    // succeeded (stream.doci.pl/getpdf/<n>/<id>/<token>, the whole original file; a Google Docs viewer URL
+    // keeps it in its url=). Only for PDFs, the one format the viewer gets as itself, and never an image; a
+    // free file (up to 1 MB) needs no harvest at all. The page's h1 rides along in the fragment, for the
+    // file's name.
     harvest:
-      "(function(){var e=document.getElementById('iframe2');var u=(e&&e.getAttribute('data-pdf-url'))||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}if(!u){var r=window.performance&&performance.getEntriesByType?performance.getEntriesByType('resource'):[];for(var i=r.length-1;i>=0;i--){if(/https?:\\/\\/stream2?\\.doci\\.pl\\/[^\\/]+\\/[^\\/]+\\//.test(r[i].name)){u=r[i].name;break}}}var m=u.match(/[?&]url=([^&]+)/);return m?decodeURIComponent(m[1]):u||''})()",
+      "(function(){var e=document.getElementById('iframe2');if(!e||String(e.getAttribute('data-ext')||'').toLowerCase()!=='pdf'||Number(e.getAttribute('data-size'))<=1048576)return '';var u=e.getAttribute('data-pdf-url')||'';var m=u.match(/[?&]url=([^&]+)/);if(m)u=decodeURIComponent(m[1]);if(!/^https:\\/\\/stream2?\\.doci\\.pl\\/(get)?pdf\\//.test(u)||/\\.(jpe?g|png|gif|webp)(\\?|$)/i.test(u))return '';var h=document.querySelector('h1');var n=h?h.textContent.replace(/\\s+/g,' ').trim():'';return u.split('#')[0]+(n?'#name='+encodeURIComponent(n):'')})()",
     links: [
-      // A document's page: /<user>/<name>+f<id>; pasted, shared, opened in Dove's browser.
-      `^https?://${host.replace(/\./g, "\\.")}/(?<id>[a-z0-9-]+/[a-z0-9-]+\\+[a-z0-9]+)/?`,
-      // A file address itself (from the viewer, pasted, shared): already the direct link, handed back.
-      `^https?://(?<id>stream2?\\.${host.replace(/\./g, "\\.")}/[^?#]+)`,
+      // A document's page: /<user>/<name>+f<id>; pasted, shared, opened in Dove's browser. User names
+      // may hold capitals, "_" and "." ("SzymiRunner", "kizi_").
+      `^https?://${host.replace(/\./g, "\\.")}/(?<id>[^/?#]+/[^/?#]+\\+f[a-z0-9]+)/?(?:[?#]|$)`,
+      // A viewer's PDF address (harvested, pasted, shared), with the harvested name if any.
+      `^https?://(?<id>stream2?\\.${host.replace(/\./g, "\\.")}/(?:get)?pdf/[^?#]+(?:#name=[^#]*)?)`,
     ],
   },
 
@@ -95,15 +119,39 @@ globalThis.plugin = {
     const raw = String(id || "").trim()
     if (!raw) throw new Error("Not a Doci document id")
 
-    // A file address Doci already shows, handed back for downloading as it is.
-    if (/^stream2?\.doci\.pl\//i.test(raw)) {
-      return { url: `https://${raw}`, headers: browserHeaders }
+    // A viewer's PDF address, handed back for downloading as it is: the file store answers it only with a
+    // doci.pl Referer (410 without one), then redirects to the file.
+    if (/^stream2?\.doci\.pl\/(?:get)?pdf\//i.test(raw)) {
+      const [path, fragment = ""] = raw.split("#")
+      let name = ""
+      try {
+        name = decodeURIComponent(fragment.replace(/^name=/, ""))
+      } catch {
+        name = ""
+      }
+      return {
+        url: `https://${path}`,
+        ...(name ? { fileName: fileName(name, "pdf") } : {}),
+        headers: { ...browserHeaders, Referer: `https://${host}/` },
+      }
     }
 
-    // A document's page: this is where a scripted request runs into Doci's captcha, so this path is the
-    // one a harvested address spares the user from; it stays for a page that has not loaded its viewer.
     const page = await itemPage(raw)
     const referer = `https://${host}/${raw}`
+
+    // Up to 1 MB: the free download, the file itself under its own name.
+    if (page.number && (!page.size || page.size <= freeLimit)) {
+      const url = await freeDownload(page.number, referer)
+      if (url) return { url, fileName: fileName(page.title, page.ext), headers: browserHeaders }
+    }
+    if (page.ext !== "pdf") {
+      throw new Error(
+        `Doci gives files over 1 MB only for payment, and its viewer shows ${String(page.ext || "this format").toUpperCase()} files only as a preview, not the file`,
+      )
+    }
+
+    // A PDF over 1 MB: the viewer's own address, which needs the page's captcha solved. A harvested
+    // address spares the user this path; it stays for a page that has not loaded its viewer.
     const gate = await post(
       "/file/file_data/cl",
       { file_id: page.id, file_size: page.size, file_extension: page.ext },
@@ -131,7 +179,7 @@ globalThis.plugin = {
     return {
       url,
       fileName: fileName(page.title, page.ext),
-      headers: browserHeaders,
+      headers: { ...browserHeaders, Referer: referer },
     }
   },
 }
