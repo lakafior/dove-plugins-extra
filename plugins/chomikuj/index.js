@@ -154,6 +154,105 @@ function row(file, kind, query) {
   }
 }
 
+/** Audio files that make an album or a many-part audiobook when several sit in one folder. */
+const folderAudio = ["mp3", "m4a", "m4b", "flac", "aac", "ogg", "oga", "opus", "wav", "wma", "ape", "alac", "aiff", "dsf"]
+
+/**
+ * Music and audiobooks: files that come from one folder of one chomik (an album's tracks, an audiobook's parts)
+ * become one row for the whole folder; a folder only one file matched stays that file. The folder's id carries
+ * the owner, folder and name for `resolve`, which asks the site for every file in it.
+ */
+function groupFolders(files, kind, query) {
+  const groups = new Map()
+  for (const file of files) {
+    const format = String(file.FileType || "").toLowerCase()
+    const owner = file.Owner && file.Owner.Id
+    if (!folderAudio.includes(format) || !owner || !file.FolderId) continue
+    const key = `${owner}/${file.FolderId}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(file)
+  }
+  const rows = []
+  const grouped = new Set()
+  for (const [key, members] of groups) {
+    if (members.length < 2) continue
+    const first = members[0]
+    const name = String(first.FolderName || "").replace(/\s+/g, " ").trim() || "Folder"
+    const ownerName = (first.Owner && first.Owner.Name) || ""
+    const counts = {}
+    for (const file of members) {
+      const format = String(file.FileType || "").toLowerCase()
+      counts[format] = (counts[format] || 0) + 1
+    }
+    const format = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0]
+    const thumbnail = members.map((file) => String(file.SmallThumbnailImg || file.ThumbnailImg || "")).find(Boolean) || ""
+    rows.push({
+      id: `folder|${first.Owner.Id}|${first.FolderId}|${encodeURIComponent(name)}`,
+      title: `${name} (folder, ${members.length}+ files)`,
+      author: ownerName || undefined,
+      kind,
+      format,
+      // Only the files the search matched: the folder may hold more.
+      size: members.reduce((sum, file) => sum + (Number(file.Size) || 0) * 1024, 0),
+      cover: thumbnail.replace(/^http:/i, "https:") || undefined,
+      free: members.every((file) => file.IsFileFreeForUser === true),
+      match: Math.max(score(query, name, ownerName ? [ownerName] : []), ...members.map((file) => score(query, String(file.FileName || ""), []))),
+    })
+    for (const file of members) grouped.add(file.FileId)
+  }
+  return { rows, grouped }
+}
+
+/** One file's download link; asking for it is what charges the transfer (free files aside). */
+async function fileLink(session, fileId) {
+  return api("/api/v3/files/download", { query: `FileId=${fileId}`, apiKey: session.ApiKey })
+}
+
+function notEnoughTransfer(balance, bytes) {
+  return new Error(
+    `Not enough transfer for this file (${sizeText(bytes)}): ${balance.BalanceInfo || "your transfer ran out"}.` +
+      (balance.PointsInfo ? ` ${balance.PointsInfo} can buy more; a file its owner marked free costs none.` : " A file its owner marked free costs none."),
+  )
+}
+
+/**
+ * Every file of a folder, in its order (the site's `Path` keeps subfolders such as CD1/CD2 together). Links are
+ * asked one by one; when the transfer runs out partway, the files already paid for are still handed over rather
+ * than thrown away, and the log says how many were left.
+ */
+async function resolveFolder(ownerId, folderId, name, ctx) {
+  const session = await login(ctx)
+  const listing = await api("/api/v3/folders/download/items", { query: `accountId=${ownerId}&folderId=${folderId}`, apiKey: session.ApiKey })
+  if (listing.Code === 12) throw new Error(`The folder “${name}” has a password on chomikuj.pl.`)
+  const files = (Array.isArray(listing.Files) ? listing.Files : []).filter((file) => file && file.FileId && !file.IsHidden)
+  if (!files.length) throw new Error(`Chomikuj lists no files in “${name}”.`)
+  files.sort((a, b) =>
+    String(a.Path || "").localeCompare(String(b.Path || ""), undefined, { numeric: true }) ||
+    String(a.FileName || "").localeCompare(String(b.FileName || ""), undefined, { numeric: true }),
+  )
+  const links = []
+  for (const file of files) {
+    const answer = await fileLink(session, file.FileId)
+    if (!answer.FileUrl) {
+      const balance = answer.AccountBalance || {}
+      if (answer.Code === 605) {
+        if (!links.length) throw notEnoughTransfer(balance, (Number(listing.QuotaRequired) || Number(file.Size) || 0) * 1024)
+        dove.log(`transfer ran out after ${links.length} of ${files.length} files: ${balance.BalanceInfo || "?"}`)
+        break
+      }
+      throw new Error("Chomikuj refused: " + (answer.Message || `code ${answer.Code}`))
+    }
+    const format = String(file.FileType || "").toLowerCase()
+    links.push({
+      url: answer.FileUrl,
+      headers: { "User-Agent": userAgent },
+      fileName: fileName(String(file.FileName || "file").replace(new RegExp(`\\.${format}$`, "i"), ""), format),
+      ...(Number(file.Size) ? { size: Number(file.Size) * 1024 } : {}),
+    })
+  }
+  return links
+}
+
 function fileName(title, format) {
   const clean = (text) => String(text || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim()
   const base = clean(title).slice(0, 150) || "file"
@@ -171,10 +270,10 @@ globalThis.plugin = {
   manifest: {
     id: "chomikuj.files",
     name: "Chomikuj",
-    version: "1.0.0",
+    version: "1.1.0",
     api: 1,
     summary:
-      "chomikuj.pl with your account: search every category in the app and download from the account's transfer; the balance shows when a file does not fit it",
+      "chomikuj.pl with your account: search every category in the app and download from the account's transfer; albums and many-part audiobooks come as one folder",
     capabilities: ["search", "resolve"],
     categories: ["all", "media", "books", "audiobooks", "music", "software", "adult"],
     hosts: [host, "*.chomikuj.pl"],
@@ -211,7 +310,15 @@ globalThis.plugin = {
 
     const inSet = (set, format) => set.includes(format)
     const rows = []
+    // An album's tracks or an audiobook's parts from one folder: one row for the folder.
+    let grouped = new Set()
+    if (category === "music" || category === "audiobooks") {
+      const folders = groupFolders(files, category, q)
+      rows.push(...folders.rows)
+      grouped = folders.grouped
+    }
     for (const file of files) {
+      if (grouped.has(file.FileId)) continue
       const format = String(file.FileType || "").toLowerCase()
       let kind
       if (category === "media") kind = "video"
@@ -242,7 +349,19 @@ globalThis.plugin = {
   },
 
   async resolve({ id }, ctx) {
-    const [fileId, encodedName, format, kilobytes] = String(id || "").split("|")
+    const parts = String(id || "").split("|")
+    if (parts[0] === "folder") {
+      const [, ownerId, folderId, encodedName] = parts
+      if (!/^\d+$/.test(ownerId || "") || !/^\d+$/.test(folderId || "")) throw new Error("Not a Chomikuj folder id")
+      let name = ""
+      try {
+        name = decodeURIComponent(encodedName || "")
+      } catch {
+        name = encodedName || ""
+      }
+      return resolveFolder(ownerId, folderId, name, ctx)
+    }
+    const [fileId, encodedName, format, kilobytes] = parts
     if (!/^\d+$/.test(fileId || "")) throw new Error("Not a Chomikuj file id")
     let name = ""
     try {
@@ -252,15 +371,10 @@ globalThis.plugin = {
     }
     const session = await login(ctx)
     // Asking for the link is what charges the transfer (free files aside), even before the download itself starts.
-    const answer = await api("/api/v3/files/download", { query: `FileId=${fileId}`, apiKey: session.ApiKey })
+    const answer = await fileLink(session, fileId)
     const balance = answer.AccountBalance || {}
     if (!answer.FileUrl) {
-      if (answer.Code === 605) {
-        throw new Error(
-          `Not enough transfer for this file (${sizeText(kilobytes * 1024)}): ${balance.BalanceInfo || "your transfer ran out"}.` +
-            (balance.PointsInfo ? ` ${balance.PointsInfo} can buy more; a file its owner marked free costs none.` : " A file its owner marked free costs none."),
-        )
-      }
+      if (answer.Code === 605) throw notEnoughTransfer(balance, kilobytes * 1024)
       throw new Error("Chomikuj refused: " + (answer.Message || `code ${answer.Code}`))
     }
     dove.log(`transfer left: ${balance.BalanceInfo || "?"}`)
