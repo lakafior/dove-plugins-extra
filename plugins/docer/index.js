@@ -1,16 +1,12 @@
 // Docer (docer.pl): user-uploaded documents, no account. Search stays on the site's own pages (Dove's
 // browser opens them: Docer's anti-bot turns away scripted requests that do not look like the site's own
 // page talking to it, a browsing user does not trip it); Dove recognises a document's page and asks this
-// plugin for the file. The file address the page's own viewer fetched is read out of the page (`harvest`:
-// `data-pdf-url` once the viewer has it) — the page's requests passed Docer's checks, captchas included —
-// and this plugin hands it back for downloading. Without it, the download tries the file viewer's
-// /start/show itself: the page posts to it with the file's id, extension and size (plus a random number as
-// its captcha answer when none was asked) and it answers with a direct file URL on stream.docer.pl (a
-// Google Docs viewer URL, the file itself in its `url=`, for the formats Docer shows there). Everything
-// the POST needs is on the document's page: #iframe2's data attributes for the id, extension and exact
-// size, and schema.org's Book for the file's own name. The POST must look like the viewer's own request —
-// headers and all — because the anti-bot returns its captcha page to anything it can tell apart from the
-// page's XHR.
+// plugin for the file. The file address the page's own viewer fetched is read out of the page (`harvest`):
+// a PDF shows it in data-pdf-url, an EPUB's download shows among the page's requests (ePub.js keeps the
+// address only in JavaScript) — the page's requests passed Docer's checks, captchas included — and this
+// plugin hands that address back for downloading, as it is. The address carries Docer's short-lived
+// token, so the download has to start while the page is open and fresh; without a harvested address, the
+// plugin tries the file viewer's /start/show itself, which asks a reCAPTCHA of anything but the page.
 import { load } from "cheerio/slim"
 import { browserHeaders } from "../_shared/text.js"
 
@@ -106,36 +102,33 @@ globalThis.plugin = {
   manifest: {
     id: "docer.books",
     name: "Docer",
-    version: "1.0.3",
+    version: "1.0.4",
     api: 1,
     summary: "Documents from docer.pl: search on the site in Dove's browser, download in the app, no account",
     capabilities: ["resolve"],
     categories: ["books"],
     hosts: [host, `*.${host}`],
     browse: `https://${host}/show/?q={query}`,
-    // The viewer's own file address, read out of the page once its viewer has fetched it: Docer's checks
-    // (captchas included) are passed by the page, not by a scripted request. A PDF lands in data-pdf-url; an
-    // EPUB's ePub.js keeps its address only in JavaScript, but its download shows in the page's Resource
-    // Timing, a Google Docs viewer keeps the file inside its own url=. That address carries an expiring
-    // token, so the expression also follows its redirect once - a request without the page's cookies is
-    // the one Docer redirects - and hands back the lasting address it lands on.
+    // The viewer's own file address, read out of the page once its viewer has fetched it: a PDF shows it
+    // in data-pdf-url, an EPUB's download shows among the page's requests (a Google Docs viewer keeps the
+    // file inside its url=). A file fetch it is — the guard needs the two path parts a file address has,
+    // so the address an expired token redirects to (the document's page) never passes for a file.
     harvest:
-      "(async function(){var w=window;var e=document.getElementById('iframe2');var u=(e&&e.getAttribute('data-pdf-url'))||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}if(!u){var r=w.performance&&performance.getEntriesByType?performance.getEntriesByType('resource'):[];for(var i=r.length-1;i>=0;i--){if(/https?:\\/\\/stream2?\\.docer\\.pl\\//.test(r[i].name)){u=r[i].name;break}}}var m=u.match(/[?&]url=([^&]+)/);if(m)u=decodeURIComponent(m[1]);if(!u||!/https?:\\/\\/stream2?\\.docer\\.pl\\//.test(u))return '';var c=w.__doveFile;if(!c||c.from!==u){c=w.__doveFile={from:u,url:''};try{var a=await fetch(u,{method:'HEAD',mode:'no-cors',credentials:'omit'});if(a&&/https?:\\/\\/stream2?\\.docer\\.pl\\//.test(a.url||''))c.url=a.url}catch(_){}}return c.url||u})()",
+      "(function(){var e=document.getElementById('iframe2');var u=(e&&e.getAttribute('data-pdf-url'))||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}if(!u){var r=window.performance&&performance.getEntriesByType?performance.getEntriesByType('resource'):[];for(var i=r.length-1;i>=0;i--){if(/https?:\\/\\/stream2?\\.docer\\.pl\\/[^\\/]+\\/[^\\/]+\\//.test(r[i].name)){u=r[i].name;break}}}var m=u.match(/[?&]url=([^&]+)/);return m?decodeURIComponent(m[1]):u||''})()",
     links: [
       `^https?://${host.replace(/\./g, "\\.")}/doc/(?<id>[a-z0-9]+)/?`,
-      // A file address itself (the viewer's own, or the lasting one it redirects to; from the page,
-      // pasted, shared): already the direct link, handed back.
-      `^https?://stream\\.${host.replace(/\./g, "\\.")}/(?<id>[^?#]+)`,
-      `^https?://stream2\\.${host.replace(/\./g, "\\.")}/(?<id>[^?#]+)`,
+      // A file address itself (the viewer's own, from the page, pasted, shared): handed back as it is.
+      `^https?://stream\\.${host.replace(/\./g, "\\.")}/(?!doc/)(?<id>[^?#]+)`,
+      `^https?://stream2\\.${host.replace(/\./g, "\\.")}/(?!doc/)(?<id>[^?#]+)`,
     ],
   },
 
   async resolve({ id }, ctx) {
     const raw = String(id || "").trim()
 
-    // A file address Docer already shows, handed back for downloading: the viewer's own
-    // ("getpdf/<n>/<slug>/<token>", an expiring token) or the lasting one its redirect lands on
-    // ("pdf_dummy/<token>", the token names the file inside).
+    // A file address Docer already shows: handed back for downloading as it is. The lasting kind a
+    // redirect lands on ("*_dummy/<token>") carries the file's name inside; the viewer's own
+    // ("getpdf/<n>/<slug>/<token>") has the document's slug in it, for the name from its page.
     if (raw.includes("/")) {
       const parts = raw.split("/")
       if (parts.length === 2 && /^[A-Za-z0-9_=,+-]{16,}$/.test(parts[1])) {
@@ -148,7 +141,6 @@ globalThis.plugin = {
         }
         return { url: `https://stream2.${host}/${raw}`, ...(name ? { fileName: name } : {}), headers: browserHeaders }
       }
-      // The slug is the short mixed-alphanumeric part.
       let name
       const slug = parts.find(
         (part, index) => index > 0 && /^[a-z0-9]{3,9}$/i.test(part) && /[a-z]/i.test(part) && /\d/.test(part),
@@ -164,23 +156,17 @@ globalThis.plugin = {
       return { url: `https://stream.${host}/${raw}`, ...(name ? { fileName: name } : {}), headers: browserHeaders }
     }
     if (/^[A-Za-z0-9_=,+-]{20,}$/.test(raw)) {
-      // pdf_dummy's token names the file inside (base64, padding as commas): "Frank Herbert - …".
-      let name
-      try {
-        const info = JSON.parse(atob(raw.replace(/,/g, "=")))
-        if (info && info.name) name = fileName(info.name, info.extension)
-      } catch {
-        // without the name the URL is handed back as it is
-      }
-      return { url: `https://stream2.${host}/pdf_dummy/${raw}`, ...(name ? { fileName: name } : {}), headers: browserHeaders }
+      // A redirect target's token alone (an older download's id): back to the address it came from.
+      return { url: `https://stream2.${host}/pdf_dummy/${raw}`, headers: browserHeaders }
     }
 
+    // A document's page: this is where a scripted request runs into Docer's captcha, so this path is the
+    // one a harvested address spares the user from; it stays for a page that has not loaded its viewer.
     const slug = raw
     if (!/^[a-z0-9]+$/i.test(slug)) throw new Error("Not a Docer document id")
 
     const page = await docPage(slug)
     const ext = page.ext || "pdf"
-    // The viewer's endpoint answers with a direct file URL, or a Google Docs viewer URL.
     const rc = Math.floor(Math.random() * 9) + 1
     const answer = await show(
       `item_id=${encodeURIComponent(page.id)}&rc=${rc}&ext=${encodeURIComponent(ext)}&size=${page.size || 0}`,
