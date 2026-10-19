@@ -106,7 +106,7 @@ globalThis.plugin = {
   manifest: {
     id: "docer.books",
     name: "Docer",
-    version: "1.0.1",
+    version: "1.0.2",
     api: 1,
     summary: "Documents from docer.pl: search on the site in Dove's browser, download in the app, no account",
     capabilities: ["resolve"],
@@ -114,13 +114,15 @@ globalThis.plugin = {
     hosts: [host, `*.${host}`],
     browse: `https://${host}/show/?q={query}`,
     // The viewer's own file address, read out of the page once its viewer has fetched it: Docer's checks
-    // (captchas included) are passed by the page, not by a scripted request.
+    // (captchas included) are passed by the page, not by a scripted request. A PDF lands in data-pdf-url; an
+    // EPUB's ePub.js keeps its address only in JavaScript, but its download shows in the page's Resource
+    // Timing, a Google Docs viewer keeps the file inside its own url=.
     harvest:
-      "(function(){var e=document.getElementById('iframe2');var u=e&&e.getAttribute('data-pdf-url')||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}var m=u.match(/[?&]url=([^&]+)/);return m?decodeURIComponent(m[1]):u})()",
+      "(function(){var e=document.getElementById('iframe2');var u=e&&e.getAttribute('data-pdf-url')||'';if(!u){var g=document.querySelector('iframe.google-doc');u=g&&g.src||''}if(!u){var r=window.performance&&performance.getEntriesByType?performance.getEntriesByType('resource'):[];for(var i=r.length-1;i>=0;i--){if(/https?:\\/\\/stream2?\\.docer\\.pl\\//.test(r[i].name)){u=r[i].name;break}}}var m=u.match(/[?&]url=([^&]+)/);return m?decodeURIComponent(m[1]):u||''})()",
     links: [
       `^https?://${host.replace(/\./g, "\\.")}/doc/(?<id>[a-z0-9]+)/?`,
       // A file URL itself (from the viewer, pasted, shared): already the direct link, handed back.
-      `^https?://stream\\.${host.replace(/\./g, "\\.")}/getpdf/(?<id>[^/?#]+/[^/?#]+/[^/?#]+/?)`,
+      `^https?://stream\\.${host.replace(/\./g, "\\.")}/[^/?#]+/(?<id>[^/?#]+/[^/?#]+/?)`,
       `^https?://stream2\\.${host.replace(/\./g, "\\.")}/pdf_dummy/(?<id>[A-Za-z0-9_=,+-]+)`,
     ],
   },
@@ -130,8 +132,11 @@ globalThis.plugin = {
 
     // A stream URL: already the direct link, only the download needs it back.
     if (raw.includes("/")) {
+      // "getpdf/118574/8vxc5/MjE…": the slug is the short mixed-alphanumeric part.
       let name
-      const slug = raw.split("/")[1]
+      const slug = raw.split("/").find(
+        (part, index) => index > 0 && /^[a-z0-9]{3,9}$/i.test(part) && /[a-z]/i.test(part) && /\d/.test(part),
+      )
       if (slug) {
         try {
           const page = await docPage(slug)
@@ -140,7 +145,7 @@ globalThis.plugin = {
           // without the name, Dove uses the address's last part
         }
       }
-      return { url: `https://stream.${host}/getpdf/${raw}`, ...(name ? { fileName: name } : {}), headers: browserHeaders }
+      return { url: `https://stream.${host}/${raw}`, ...(name ? { fileName: name } : {}), headers: browserHeaders }
     }
     if (/^[A-Za-z0-9_=,+-]{20,}$/.test(raw)) {
       // pdf_dummy's token names the file inside (base64, padding as commas): "Frank Herbert - …".
