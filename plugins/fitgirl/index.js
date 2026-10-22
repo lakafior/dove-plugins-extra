@@ -46,7 +46,6 @@ globalThis.plugin = {
     capabilities: ["search", "resolve"],
     categories: ["games", "all"],
     hosts: ["fitgirl-repacks.site"],
-    browse: "https://fitgirl-repacks.site/?s={query}",
     links: ["^https://fitgirl-repacks\\.site/(?<id>[a-z0-9-]+)/?$"],
   },
 

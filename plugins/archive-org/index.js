@@ -136,13 +136,12 @@ globalThis.plugin = {
   manifest: {
     id: "archive.org",
     name: "Internet Archive",
-    version: "1.0.0",
+    version: "1.0.1",
     api: 1,
     summary: "Public items from archive.org in every category: books, LibriVox audiobooks, music, films, games and software; no account",
     capabilities: ["search", "resolve"],
     categories: ["all", "media", "books", "audiobooks", "music", "games", "software"],
     hosts: ["archive.org"],
-    browse: "https://archive.org/search?query={query}",
     links: ["^https://archive\\.org/(?:details|download)/(?<id>[^/?#]+)"],
   },
 
