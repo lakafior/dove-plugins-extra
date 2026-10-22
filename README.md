@@ -1,6 +1,6 @@
 # dove-plugins
 
-Plugins for [Dove](https://github.com/lakafior/Dove) (iOS): book and music metadata and downloads from sites without an
+Plugins for [Dove](https://github.com/lakafior/Dove) (iOS): book, music and game metadata and downloads from sites without an
 official API, run on the phone in Dove's JavaScript sandbox. The contract is Dove's `docs/plugins.md` (API v1).
 
 | Plugin | Id | Does | Reaches |
@@ -15,7 +15,14 @@ official API, run on the phone in Dove's JavaScript sandbox. The contract is Dov
 | Wolnelektury | `wolnelektury.books` | for a book picked from Dove's metadata search: Wolne Lektury's free Polish books (epub; PDF, mobi, fb2, txt as fallback) and audiobooks (mp3, a recorded work's parts under one row, in reading order), no account. The site's OPDS catalog searches books, its official API gives the files and the recordings | wolnelektury.pl |
 | Docer | `docer.books` | documents from docer.pl, no account; search on the site in Dove's browser, document pages are recognised. Files up to 1 MB download directly; larger ones through the page's viewer (after its captcha) | docer.pl, stream.docer.pl, stream2.docer.pl, img2.docer.pl |
 | Doci | `doci.books` | documents from doci.pl (Docer's twin with its own file store), no account; search on the site in Dove's browser, document pages are recognised. Files up to 1 MB download directly; larger ones only as PDFs, after the page's captcha (Doci charges for other formats over 1 MB) | doci.pl, stream.doci.pl, stream2.doci.pl |
-| Chomikuj | `chomikuj.files` | chomikuj.pl with your account (settings): search every category in the app (Media, Books, Audiobooks, Music, Software, Adult) and download inside it; in Music and Audiobooks, several matches from one folder (an album, a many-part audiobook) come as one row for the whole folder; downloads draw from the account's transfer, and when a file does not fit it the error says how much is left. The site's Android-app API (mobile.chomikuj.pl) does the work | mobile.chomikuj.pl, s*.chomikuj.pl |
+| Chomikuj | `chomikuj.files` | chomikuj.pl with your account (settings): search every category in the app (Media, Books, Audiobooks, Music, Games, Software, Adult) and download inside it; in Games, installers, disc images and ROMs; in Music and Audiobooks, several matches from one folder (an album, a many-part audiobook) come as one row for the whole folder; downloads draw from the account's transfer, and when a file does not fit it the error says how much is left. The site's Android-app API (mobile.chomikuj.pl) does the work | mobile.chomikuj.pl, s*.chomikuj.pl |
+| Steam | `steam.metadata` | game titles, box covers (600×900), years, genres and descriptions for Games from the Steam store's JSON (storesearch, appdetails for the first six), no account; every game is PC; soundtracks and DLC are marked so they sink below the game | store.steampowered.com |
+| GOG | `gog.metadata` | game titles, box covers, years and genres for Games from GOG's catalog JSON, no account; PC; packs (GOTY editions) count as the game | catalog.gog.com |
+| LaunchBox Games DB | `launchbox.metadata` | game titles, box covers, platforms and years for Games from gamesdb.launchbox-app.com's search page (no public API), no account: strongest for retro consoles; ROM hacks are marked so the original comes first | gamesdb.launchbox-app.com |
+| RAWG | `rawg.metadata` | game titles, years, platforms, genres and artwork (landscape screenshots, not box covers) for Games with your free RAWG key | api.rawg.io |
+| SteamGridDB | `steamgriddb.metadata` | box covers (600×900 grids) for Games with your free SteamGridDB key; Dove uses them when IGDB has no cover | www.steamgriddb.com |
+| TheGamesDB | `thegamesdb.metadata` | game titles, box covers, platforms, years and descriptions for Games with your TheGamesDB key (monthly allowance) | api.thegamesdb.net |
+| ScreenScraper | `screenscraper.metadata` | retro game titles, box covers, consoles, years and descriptions for Games: needs ScreenScraper's developer credentials (asked for on its forum) and, for more searches a day, your account; covers whose addresses carry a login are left out | api.screenscraper.fr |
 
 ## Use in Dove
 

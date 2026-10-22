@@ -127,14 +127,19 @@ function words(query, book) {
 }
 
 /** The site's own search filters (its API knows: All, Video, Music, Image, Documents, Others — nothing for
- *  software or audiobooks, so those search everything and keep the formats here, client-side). */
-const filters = { media: "Video", books: "Documents", music: "Music", audiobooks: "All", software: "All", adult: "All", all: "All" }
+ *  software, games or audiobooks, so those search everything and keep the formats here, client-side). */
+const filters = { media: "Video", books: "Documents", music: "Music", audiobooks: "All", games: "All", software: "All", adult: "All", all: "All" }
 
 /** What the site counts a file as, for the rows of the free categories. */
 const kinds = { Video: "video", Music: "music", Document: "books", Application: "software", Image: "other", Archive: "other", Undefined: "other" }
 
 const audioFormats = ["mp3", "m4b", "m4a", "ogg", "oga", "opus", "flac", "aac", "wav", "wma", "aa", "aax", "ape", "zip", "rar", "7z"]
 const softwareFormats = ["exe", "msi", "rar", "zip", "7z", "iso", "apk", "dmg", "cab", "jar", "bin", "mdf", "nrg", "tar", "gz", "bz2", "rpm", "deb", "msu", "msp", "ipa"]
+/** Games: installers and disc images (as for software) plus ROMs and console dumps. */
+const gameFormats = [
+  ...softwareFormats, "cue", "chd", "cso", "pbp", "nsp", "nsz", "xci", "xcz", "wbfs", "rvz", "gcz", "wua", "wux",
+  "sfc", "smc", "nes", "gb", "gbc", "gba", "n64", "z64", "v64", "nds", "3ds", "cia", "vpk", "md", "gen", "smd", "sms", "pkg",
+]
 /** Formats Dove can use first, in Apple Books / Kindle order; audiobooks: one file beats a pack of many parts. */
 const bookRank = { epub: 0, mobi: 1, azw3: 2, pdf: 3, djvu: 4, doc: 5, rtf: 6 }
 const audioRank = { m4b: 0, mp3: 1, m4a: 2, flac: 3, ogg: 4, zip: 5, rar: 6, "7z": 7 }
@@ -303,12 +308,12 @@ globalThis.plugin = {
   manifest: {
     id: "chomikuj.files",
     name: "Chomikuj",
-    version: "1.2.0",
+    version: "1.3.0",
     api: 1,
     summary:
       "chomikuj.pl with your account: search every category in the app and download from the account's transfer; albums and many-part audiobooks come as one folder",
     capabilities: ["search", "resolve"],
-    categories: ["all", "media", "books", "audiobooks", "music", "software", "adult"],
+    categories: ["all", "media", "books", "audiobooks", "music", "games", "software", "adult"],
     hosts: [host, "*.chomikuj.pl"],
     settings: [
       {
@@ -327,9 +332,9 @@ globalThis.plugin = {
     const q = words(query, book).replace(/\s+/g, " ").trim().slice(0, 100)
     if (!q) return []
     const filter = filters[category] || "All"
-    // Software and audiobooks search everything and keep the formats client-side, so one page of 50 leaves
+    // Software, games and audiobooks search everything and keep the formats client-side, so one page of 50 leaves
     // little behind; walk a few more while the answer says there is a next one.
-    const pages = category === "software" || category === "audiobooks" ? [1, 2, 3] : [1]
+    const pages = category === "software" || category === "games" || category === "audiobooks" ? [1, 2, 3] : [1]
     const files = []
     for (const page of pages) {
       const answer = await api("/api/v3/files/search", {
@@ -363,6 +368,9 @@ globalThis.plugin = {
       else if (category === "software") {
         if (file.MediaType !== "Application" && !inSet(softwareFormats, format)) continue
         kind = "software"
+      } else if (category === "games") {
+        if (file.MediaType !== "Application" && !inSet(gameFormats, format)) continue
+        kind = "games"
       } else kind = kinds[file.MediaType] || "other"
       rows.push(row(file, kind, q))
     }
