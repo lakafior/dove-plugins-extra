@@ -1,12 +1,12 @@
 {
-  "name": "dove-plugins",
+  "name": "dove-plugins-extra",
   "private": true,
   "type": "module",
-  "description": "Plugins for Dove (iOS): metadata and downloads from sites without an official API.",
+  "description": "Extra plugins for Dove (iOS and macOS): music, books, documents and games from sites without an official API.",
   "license": "MPL-2.0",
   "dove": {
-    "repository": "Marcin's Dove plugins",
-    "url": "https://lakafior.github.io/dove-plugins/index.json"
+    "repository": "Dove plugins (extra)",
+    "url": "https://lakafior.github.io/dove-plugins-extra/index.json"
   },
   "scripts": {
     "build": "node scripts/build.mjs"

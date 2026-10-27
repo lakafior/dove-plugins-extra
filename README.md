@@ -1,29 +1,18 @@
-# dove-plugins
+# dove-plugins-extra
 
-Plugins for [Dove](https://github.com/lakafior/Dove) (iOS): book, music and game metadata and downloads from sites without an
-official API, run on the phone in Dove's JavaScript sandbox. The contract is Dove's `docs/plugins.md` (API v1).
+Extra plugins for [Dove](https://github.com/lakafior/Dove) (iOS and macOS): music, books, documents and games from sites
+without an official API, run on the phone in Dove's JavaScript sandbox. The contract is Dove's `docs/plugins.md` (API v1).
 
 | Plugin | Id | Does | Reaches |
 |---|---|---|---|
-| Polskie książki | `pl.polskie-ksiazki` | metadata for Books and Audiobooks: lubimyczytac.pl, Audioteka (audiobooks), Storytel (the market's own editions) | lubimyczytac.pl, audioteka.com, www.storytel.com |
-| Audible | `audible.metadata` | audiobook metadata from Audible's catalog API (store in settings) | api.audible.* |
 | Monochrome | `monochrome.music` | Hi-Res FLAC releases from monochrome.st for Music, no account: search in the app (from an album's screen its releases come first) and download a whole release, one FLAC per track in one folder; the links need no headers, so a cloud service can fetch them too. Release pages (`monochrome.st/album/<id>`) are recognised | tracks.monochrome.st |
 | ARCOD | `arcod.music` | Qobuz releases in FLAC up to 24-bit/192 kHz from arcod.xyz with your free account (settings; CD quality as an option): search in the app (releases, and single tracks from the search field; from an album's screen its releases come first) and download a whole release, one FLAC per track in one folder. Tracks are ripped on ARCOD's servers four at a time; a long album may need a second try a minute later, when the finished tracks come from your ARCOD library. Qobuz album links are recognised | arcod.xyz, its Supabase sign-in |
 | Deezer | `deezer.metadata` | album covers, titles, types and track lists for Music (Dove 2026-10-19 or newer), from Deezer's public API, no account. Deezer's API terms do not allow use alongside downloading: installing it is your call | api.deezer.com |
 | Libgen | `libgen.books` | search for Books in the app (rows with format, size, language, cover) and download; no account. Mirror in settings (default libgen.li; also libgen.la, .bz, .gl) | the mirror you set |
 | Anna's Archive | `annas-archive.download` | downloads with your member key; search on the site in Dove's browser, file pages are recognised | the address you set |
-| Wolnelektury | `wolnelektury.books` | for a book picked from Dove's metadata search: Wolne Lektury's free Polish books (epub; PDF, mobi, fb2, txt as fallback) and audiobooks (mp3, a recorded work's parts under one row, in reading order), no account. The site's OPDS catalog searches books, its official API gives the files and the recordings | wolnelektury.pl |
 | Docer | `docer.books` | documents from docer.pl, no account; search on the site in Dove's browser, document pages are recognised. Files up to 1 MB download directly; larger ones through the page's viewer (after its captcha) | docer.pl, stream.docer.pl, stream2.docer.pl, img2.docer.pl |
 | Doci | `doci.books` | documents from doci.pl (Docer's twin with its own file store), no account; search on the site in Dove's browser, document pages are recognised. Files up to 1 MB download directly; larger ones only as PDFs, after the page's captcha (Doci charges for other formats over 1 MB) | doci.pl, stream.doci.pl, stream2.doci.pl |
 | Chomikuj | `chomikuj.files` | chomikuj.pl with your account (settings): search every category in the app (Media, Books, Audiobooks, Music, Games, Software, Adult) and download inside it; in Games, installers, disc images and ROMs; in Music and Audiobooks, several matches from one folder (an album, a many-part audiobook) come as one row for the whole folder; downloads draw from the account's transfer, and when a file does not fit it the error says how much is left. The site's Android-app API (mobile.chomikuj.pl) does the work | mobile.chomikuj.pl, s*.chomikuj.pl |
-| Steam | `steam.metadata` | game titles, box covers (600×900), years, genres and descriptions for Games from the Steam store's JSON (storesearch, appdetails for the first six), no account; every game is PC; soundtracks and DLC are marked so they sink below the game | store.steampowered.com |
-| GOG | `gog.metadata` | game titles, box covers, years and genres for Games from GOG's catalog JSON, no account; PC; packs (GOTY editions) count as the game | catalog.gog.com |
-| LaunchBox Games DB | `launchbox.metadata` | game titles, box covers, platforms and years for Games from gamesdb.launchbox-app.com's search page (no public API), no account: strongest for retro consoles; ROM hacks are marked so the original comes first | gamesdb.launchbox-app.com |
-| RAWG | `rawg.metadata` | game titles, years, platforms, genres and artwork (landscape screenshots, not box covers) for Games with your free RAWG key | api.rawg.io |
-| SteamGridDB | `steamgriddb.metadata` | box covers (600×900 grids) for Games with your free SteamGridDB key; Dove uses them when IGDB has no cover | www.steamgriddb.com |
-| TheGamesDB | `thegamesdb.metadata` | game titles, box covers, platforms, years and descriptions for Games with your TheGamesDB key (monthly allowance) | api.thegamesdb.net |
-| ScreenScraper | `screenscraper.metadata` | retro game titles, box covers, consoles, years and descriptions for Games: needs ScreenScraper's developer credentials (asked for on its forum) and, for more searches a day, your account; covers whose addresses carry a login are left out | api.screenscraper.fr |
-| Internet Archive | `archive.org` | public archive.org items in every category, no account: Books (EPUB first, else PDF…), Audiobooks (LibriVox: the m4b parts, else the MP3 chapters), Music (FLAC originals, else MP3, in track order), Movies & TV (the largest MKV/MP4 original), Games and Software (every original file but screenshots); most downloaded first; its item pages (`/details/…`), pasted or shared, are recognised. Items archive.org only lends or keeps dark are left out; items of more than 150 files (ROM sets, discographies) are refused with a note to pick a file on the site. Links are plain, so a cloud service can fetch them | archive.org |
 | FitGirl Repacks | `fitgirl.repacks` | PC game repacks for Games through the site's WordPress REST API, no account: rows with the repack size and cover, most relevant first (no Updates Digests); a repack comes as FitGirl's magnet, which Dove (2026-10-22 or newer) adds to your torrent service, or with Download only fetches to the phone; post pages are recognised | fitgirl-repacks.site |
 
 ## Use in Dove
@@ -31,7 +20,7 @@ official API, run on the phone in Dove's JavaScript sandbox. The contract is Dov
 Settings › Search and metadata › Plugins › Add repository:
 
 ```
-https://lakafior.github.io/dove-plugins/index.json
+https://lakafior.github.io/dove-plugins-extra/index.json
 ```
 
 Then install a plugin (Dove shows the hosts it may reach) and fill its settings.
